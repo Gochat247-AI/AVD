@@ -1,0 +1,200 @@
+<?php
+
+namespace App\Jobs;
+
+use App\Events\ScrapingEvent;
+use App\Models\AppleApp;
+use App\Models\AppleReview;
+use App\Models\User;
+use App\Models\UserJob;
+use App\Notifications\ScrapingNotification;
+use Carbon\Carbon;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+
+class ProcessScrapingAppleReviews implements ShouldQueue
+{
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    public $timeout = 3600; // Timeout in seconds
+    protected $requestData;
+    protected $userId;
+
+    /**
+     * Create a new job instance.
+     */
+    public function __construct($requestData, $userId)
+    {
+        $this->requestData  = $requestData;
+        $this->userId       = $userId;
+    }
+
+    /**
+     * Execute the job.
+     */
+    public function handle(): void
+    {
+        $validated = $this->requestData;
+
+        $appId = $validated['appId'];
+        $user = User::find($this->userId);
+
+        $appStoreApp = AppleApp::where('id', $appId)->first(['app_name', 'app_id', 'country']);
+        $uniqueReviewsCount = AppleReview::where('app_id', $appId)->count();
+        $reviewsCount = intval($validated["reviewsCount"]);
+        $totalCount = intval($reviewsCount + $uniqueReviewsCount);
+
+        try {
+            $job = new UserJob([
+                'job_id'        => $this->job->getJobId(),
+                'status'        => 'processing',
+                'request_type'  => 'reviews_scraping',
+                'request_count' => $validated["reviewsCount"],
+                'completed_count' => 0,
+                'user_id' => $user->id
+            ]);
+
+            // Associate job with AppleApp
+            $appleApp = AppleApp::find($appId);
+            $appleApp->jobs()->save($job);
+            $jobId = $job->id;
+
+            // Call your new FastAPI endpoint
+            Log::info("Calling FastAPI Apple Reviews endpoint", [
+                'app_id' => $appStoreApp->app_id,
+                'country' => $appStoreApp->country,
+                'limit' => $totalCount
+            ]);
+
+            $reviewsResponse = Http::timeout(120)
+                ->withOptions([
+                    'verify' => false, // Disable SSL verification if needed
+                ])
+                ->post('http://localhost:5006/v1/apple/reviews', [
+                    'app_id' => intval($appStoreApp->app_id),
+                    'country' => $appStoreApp->country,
+                    'limit' => $totalCount,
+                ]);
+
+            if ($reviewsResponse->successful()) {
+                $reviewsData = $reviewsResponse->json();
+                Log::info("Successfully fetched reviews", [
+                    'total_fetched' => $reviewsData['total_reviews_fetched'] ?? 0
+                ]);
+            } else {
+                Log::error("Failed to fetch reviews from FastAPI", [
+                    'status' => $reviewsResponse->status(),
+                    'body' => $reviewsResponse->body()
+                ]);
+                throw new \Exception("Failed to fetch reviews: HTTP " . $reviewsResponse->status());
+            }
+
+            $processedCount = 0;
+            
+            // Process the new JSON structure
+            if (isset($reviewsData['reviews']) && is_array($reviewsData['reviews'])) {
+                foreach ($reviewsData['reviews'] as $reviewData) {
+                    
+                    // Check if review already exists
+                    $exists = AppleReview::where('review_id', $reviewData['id'])->exists();
+                    if (!$exists) {
+                        
+                        // Parse the date - handle the new format
+                        $reviewDate = null;
+                        if (!empty($reviewData['date'])) {
+                            try {
+                                $reviewDate = Carbon::parse($reviewData['date'])->format('Y-m-d H:i:s');
+                            } catch (\Exception $e) {
+                                Log::warning("Failed to parse date: " . $reviewData['date']);
+                                $reviewDate = now()->format('Y-m-d H:i:s');
+                            }
+                        } else {
+                            $reviewDate = now()->format('Y-m-d H:i:s');
+                        }
+
+                        // FIXED: Provide default values for NOT NULL columns
+                        $review = new AppleReview([
+                            'review_id' => $reviewData['id'],
+                            'user_name' => $reviewData['user_name'] ?? 'Anonymous',
+                            'user_url'  => $reviewData['user_url'] ?? 'N/A', // FIXED: Default value instead of null
+                            'version'   => $reviewData['version'] ?? 'N/A',   // FIXED: Default value instead of null
+                            'score'     => $reviewData['rating'] ?? 0,
+                            'title'     => $reviewData['title'] ?? '',
+                            'text'      => $reviewData['content'] ?? '',
+                            'url'       => $reviewData['url'] ?? 'N/A',       // FIXED: Default value instead of null
+                            'updated'   => $reviewDate,
+                            'app_id'    => $appId,
+                        ]);
+
+                        try {
+                            $appStoreApp->reviews()->save($review);
+                            $processedCount++;
+
+                            // Update job progress
+                            $userJob = UserJob::find($jobId);
+                            if ($userJob) {
+                                $userJob->increment('completed_count');
+                            }
+
+                            // Log progress every 10 reviews
+                            if ($processedCount % 10 == 0) {
+                                Log::info("Processed {$processedCount} reviews so far");
+                            }
+
+                        } catch (\Exception $saveException) {
+                            Log::error("Failed to save review", [
+                                'review_id' => $reviewData['id'],
+                                'error' => $saveException->getMessage(),
+                                'review_data' => $reviewData
+                            ]);
+                            // Continue processing other reviews instead of failing completely
+                            continue;
+                        }
+                    }
+                }
+            }
+
+            // Update job status to completed
+            $job->update([
+                'status' => 'completed',
+            ]);
+
+            Log::info("Apple reviews scraping completed", [
+                'app_id' => $appId,
+                'total_processed' => $processedCount,
+                'total_fetched' => $reviewsData['total_reviews_fetched'] ?? 0
+            ]);
+
+            // Send notification
+            if ($user) {
+                $user->notify(new ScrapingNotification($appStoreApp->app_name, $appStoreApp->id, 'apple'));
+            }
+
+            broadcast(new ScrapingEvent());
+
+        } catch (\Exception $e) {
+            Log::error("Apple reviews scraping job failed", [
+                'userId' => $this->userId,
+                'appId' => $appId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            // Update job status to failed
+            $job = UserJob::where('job_id', $this->job->getJobId())->first();
+            if ($job) {
+                $job->update([
+                    'status' => 'failed',
+                ]);
+            }
+
+            throw $e;
+        }
+    }
+}

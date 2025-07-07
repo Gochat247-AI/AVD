@@ -45,7 +45,20 @@ class ProcessScrapingAppleReviews implements ShouldQueue
         $appId = $validated['appId'];
         $user = User::find($this->userId);
 
+        // DEBUGGING: Log the appId to ensure it's not null
+        Log::info("Processing Apple reviews scraping", [
+            'appId' => $appId,
+            'userId' => $this->userId,
+            'requestData' => $validated
+        ]);
+
         $appStoreApp = AppleApp::where('id', $appId)->first(['app_name', 'app_id', 'country']);
+        
+        if (!$appStoreApp) {
+            Log::error("AppleApp not found", ['appId' => $appId]);
+            throw new \Exception("Apple App not found with ID: {$appId}");
+        }
+
         $uniqueReviewsCount = AppleReview::where('app_id', $appId)->count();
         $reviewsCount = intval($validated["reviewsCount"]);
         $totalCount = intval($reviewsCount + $uniqueReviewsCount);
@@ -118,22 +131,31 @@ class ProcessScrapingAppleReviews implements ShouldQueue
                             $reviewDate = now()->format('Y-m-d H:i:s');
                         }
 
-                        // FIXED: Provide default values for NOT NULL columns
-                        $review = new AppleReview([
+                        // FIXED: Ensure app_id is properly set and not null
+                        $reviewToSave = [
                             'review_id' => $reviewData['id'],
                             'user_name' => $reviewData['user_name'] ?? 'Anonymous',
-                            'user_url'  => $reviewData['user_url'] ?? 'N/A', // FIXED: Default value instead of null
-                            'version'   => $reviewData['version'] ?? 'N/A',   // FIXED: Default value instead of null
+                            'user_url'  => $reviewData['user_url'] ?? 'N/A',
+                            'version'   => $reviewData['version'] ?? 'N/A',
                             'score'     => $reviewData['rating'] ?? 0,
                             'title'     => $reviewData['title'] ?? '',
                             'text'      => $reviewData['content'] ?? '',
-                            'url'       => $reviewData['url'] ?? 'N/A',       // FIXED: Default value instead of null
+                            'url'       => $reviewData['url'] ?? 'N/A',
                             'updated'   => $reviewDate,
-                            'app_id'    => $appId,
+                            'app_id'    => $appId, // FIXED: Use the validated $appId directly
+                        ];
+
+                        // DEBUGGING: Log the review data before saving
+                        Log::info("Attempting to save review", [
+                            'review_id' => $reviewData['id'],
+                            'app_id' => $appId,
+                            'review_data_keys' => array_keys($reviewToSave)
                         ]);
 
                         try {
-                            $appStoreApp->reviews()->save($review);
+                            $review = new AppleReview($reviewToSave);
+                            $review->save(); // Use direct save instead of relationship save
+                            
                             $processedCount++;
 
                             // Update job progress
@@ -151,7 +173,8 @@ class ProcessScrapingAppleReviews implements ShouldQueue
                             Log::error("Failed to save review", [
                                 'review_id' => $reviewData['id'],
                                 'error' => $saveException->getMessage(),
-                                'review_data' => $reviewData
+                                'review_data' => $reviewToSave, // Log the actual data being saved
+                                'app_id' => $appId
                             ]);
                             // Continue processing other reviews instead of failing completely
                             continue;
@@ -176,7 +199,15 @@ class ProcessScrapingAppleReviews implements ShouldQueue
                 $user->notify(new ScrapingNotification($appStoreApp->app_name, $appStoreApp->id, 'apple'));
             }
 
-            broadcast(new ScrapingEvent());
+            // FIXED: Handle SSL issues with broadcasting
+            try {
+                broadcast(new ScrapingEvent());
+            } catch (\Exception $broadcastException) {
+                Log::warning("Broadcasting failed due to SSL issues", [
+                    'error' => $broadcastException->getMessage()
+                ]);
+                // Don't fail the job if broadcasting fails
+            }
 
         } catch (\Exception $e) {
             Log::error("Apple reviews scraping job failed", [

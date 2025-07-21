@@ -1,0 +1,385 @@
+#!/usr/bin/env python3
+"""
+LDAP Authentication Service for Laravel Integration using FastAPI
+This script ONLY handles LDAP authentication and data fetching
+Laravel handles all database operations and role assignments
+"""
+
+import os
+import sys
+import json
+import logging
+from datetime import datetime
+from typing import Optional, Dict, Any, List
+from ldap3 import Server, Connection, ALL, SUBTREE
+from ldap3.core.exceptions import LDAPException, LDAPBindError
+from fastapi import FastAPI, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+import uvicorn
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('ldap_auth.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# Configuration
+LDAP_CONFIG = {
+    "server": os.getenv("LDAP_SERVER", "ldaps://etisalat.corp.ae:636"),
+    "base_dn": os.getenv("LDAP_BASE_DN", "DC=ETISALAT,DC=CORP,DC=AE"),
+    "bind_dn": os.getenv("LDAP_BIND_DN", "HOENG\\srvgochat247dev"),
+    "bind_password": os.getenv("LDAP_BIND_PASSWORD", "i21I3K7CfO8ZD"),
+    "user_filter": os.getenv("LDAP_USER_FILTER", "(&(sAMAccountName={})(objectclass=person))"),
+    "user_search_base": os.getenv("LDAP_USER_SEARCH_BASE", "DC=ETISALAT,DC=CORP,DC=AE")
+}
+
+# Pydantic Models
+class AuthRequest(BaseModel):
+    username: str = Field(..., min_length=1, description="LDAP username")
+    password: str = Field(..., min_length=1, description="User password")
+
+class LDAPUserData(BaseModel):
+    sAMAccountName: Optional[str] = None
+    userPrincipalName: Optional[str] = None
+    mail: Optional[str] = None
+    displayName: Optional[str] = None
+    cn: Optional[str] = None
+    department: Optional[str] = None
+    title: Optional[str] = None
+    telephoneNumber: Optional[str] = None
+    distinguishedName: Optional[str] = None
+    groups: List[str] = []
+
+class AuthResponse(BaseModel):
+    success: bool
+    message: str
+    user_data: Optional[LDAPUserData] = None
+
+class HealthResponse(BaseModel):
+    status: str
+    service: str
+    timestamp: str
+
+class UserInfoResponse(BaseModel):
+    success: bool
+    message: Optional[str] = None
+    user_data: Optional[LDAPUserData] = None
+
+# FastAPI app
+app = FastAPI(
+    title="LDAP Authentication Service",
+    description="LDAP Authentication Service for Laravel Integration - LDAP Only",
+    version="2.0.0"
+)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Configure appropriately for production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+class LDAPAuthenticator:
+    def __init__(self):
+        self.server = Server(LDAP_CONFIG["server"], get_info=ALL, use_ssl=True)
+    
+    async def authenticate_user(self, username: str, password: str) -> Dict[str, Any]:
+        """
+        Authenticate user against LDAP and return user data
+        Does NOT touch the database - Laravel handles that
+        """
+        try:
+            # Step 1: Get user DN using service account
+            service_conn = Connection(
+                self.server,
+                user=LDAP_CONFIG["bind_dn"],
+                password=LDAP_CONFIG["bind_password"],
+                auto_bind=True
+            )
+            
+            # Search for user
+            user_filter = LDAP_CONFIG["user_filter"].format(username)
+            logger.info(f"Searching for user: {username}")
+            
+            service_conn.search(
+                search_base=LDAP_CONFIG["user_search_base"],
+                search_filter=user_filter,
+                search_scope=SUBTREE,
+                attributes=[
+                    'sAMAccountName', 'mail', 'displayName', 'cn',
+                    'userPrincipalName', 'memberOf', 'department',
+                    'distinguishedName', 'telephoneNumber', 'title'
+                ]
+            )
+            
+            if not service_conn.entries:
+                logger.warning(f"User not found: {username}")
+                service_conn.unbind()
+                return {"success": False, "message": "User not found"}
+            
+            # Get user entry
+            user_entry = service_conn.entries[0]
+            user_dn = user_entry.distinguishedName.value
+            
+            # Extract user data
+            user_data = self._extract_user_data(user_entry)
+            service_conn.unbind()
+            
+            # Step 2: Authenticate user with their credentials
+            try:
+                user_conn = Connection(
+                    self.server,
+                    user=user_dn,
+                    password=password,
+                    auto_bind=True
+                )
+                
+                logger.info(f"User authenticated successfully: {username}")
+                user_conn.unbind()
+                
+                # Return LDAP data to Laravel for database operations
+                return {
+                    "success": True,
+                    "message": "Authentication successful",
+                    "user_data": user_data
+                }
+                
+            except LDAPBindError as e:
+                logger.warning(f"Authentication failed for user {username}: {e}")
+                return {"success": False, "message": "Invalid credentials"}
+                
+        except Exception as e:
+            logger.error(f"LDAP authentication error: {e}")
+            return {"success": False, "message": f"Authentication error: {str(e)}"}
+    
+    async def get_user_info(self, username: str) -> Dict[str, Any]:
+        """
+        Get user information from LDAP without authentication
+        """
+        try:
+            service_conn = Connection(
+                self.server,
+                user=LDAP_CONFIG["bind_dn"],
+                password=LDAP_CONFIG["bind_password"],
+                auto_bind=True
+            )
+            
+            user_filter = LDAP_CONFIG["user_filter"].format(username)
+            service_conn.search(
+                search_base=LDAP_CONFIG["user_search_base"],
+                search_filter=user_filter,
+                search_scope=SUBTREE,
+                attributes=[
+                    'sAMAccountName', 'mail', 'displayName', 'cn',
+                    'userPrincipalName', 'memberOf', 'department',
+                    'telephoneNumber', 'title'
+                ]
+            )
+            
+            if service_conn.entries:
+                user_data = self._extract_user_data(service_conn.entries[0])
+                service_conn.unbind()
+                return {
+                    "success": True,
+                    "user_data": user_data
+                }
+            else:
+                service_conn.unbind()
+                return {
+                    "success": False,
+                    "message": "User not found"
+                }
+                
+        except Exception as e:
+            logger.error(f"Get user info error: {e}")
+            return {
+                "success": False,
+                "message": f"Error: {str(e)}"
+            }
+    
+    def _extract_user_data(self, user_entry) -> Dict[str, Any]:
+        """
+        Extract user data from LDAP entry
+        """
+        def get_attribute_value(attr):
+            value = getattr(user_entry, attr, None)
+            if value is None:
+                return None
+            return value.value if hasattr(value, 'value') else str(value)
+        
+        # Extract groups
+        groups = []
+        if hasattr(user_entry, 'memberOf') and user_entry.memberOf:
+            for group_dn in user_entry.memberOf.values:
+                # Extract CN from group DN
+                cn_part = [part for part in group_dn.split(',') if part.strip().startswith('CN=')]
+                if cn_part:
+                    group_name = cn_part[0].replace('CN=', '').strip()
+                    groups.append(group_name)
+        
+        user_data = {
+            'sAMAccountName': get_attribute_value('sAMAccountName'),
+            'userPrincipalName': get_attribute_value('userPrincipalName'),
+            'mail': get_attribute_value('mail'),
+            'displayName': get_attribute_value('displayName'),
+            'cn': get_attribute_value('cn'),
+            'department': get_attribute_value('department'),
+            'title': get_attribute_value('title'),
+            'telephoneNumber': get_attribute_value('telephoneNumber'),
+            'distinguishedName': get_attribute_value('distinguishedName'),
+            'groups': groups
+        }
+        
+        return user_data
+
+# Initialize authenticator
+auth = LDAPAuthenticator()
+
+# FastAPI Routes
+@app.get("/", tags=["Root"])
+async def root():
+    """Root endpoint"""
+    return {
+        "service": "LDAP Authentication Service",
+        "version": "2.0.0",
+        "status": "running",
+        "description": "LDAP authentication only - Laravel handles database operations"
+    }
+
+@app.get("/health", response_model=HealthResponse, tags=["Health"])
+async def health_check():
+    """Health check endpoint"""
+    return HealthResponse(
+        status="healthy",
+        service="LDAP Authentication Service",
+        timestamp=datetime.now().isoformat()
+    )
+
+@app.post("/authenticate", response_model=AuthResponse, tags=["Authentication"])
+async def authenticate(request: AuthRequest):
+    """
+    Authenticate user via LDAP and return user data
+    Laravel will handle database operations and role assignments
+    """
+    try:
+        username = request.username.strip()
+        password = request.password
+        
+        if not username or not password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username and password cannot be empty"
+            )
+        
+        # Authenticate user against LDAP
+        result = await auth.authenticate_user(username, password)
+        
+        if result['success']:
+            return AuthResponse(**result)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=result['message']
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Authentication endpoint error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
+        )
+
+@app.get("/user-info/{username}", response_model=UserInfoResponse, tags=["User Info"])
+async def get_user_info(username: str):
+    """
+    Get user information from LDAP (without authentication)
+    """
+    try:
+        if not username.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username is required"
+            )
+        
+        result = await auth.get_user_info(username.strip())
+        
+        if result['success']:
+            return UserInfoResponse(**result)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=result['message']
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get user info error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
+        )
+
+@app.get("/test-ldap-connection", tags=["Testing"])
+async def test_ldap_connection():
+    """
+    Test LDAP server connection
+    """
+    try:
+        service_conn = Connection(
+            auth.server,
+            user=LDAP_CONFIG["bind_dn"],
+            password=LDAP_CONFIG["bind_password"],
+            auto_bind=True
+        )
+        
+        server_info = str(auth.server.info) if auth.server.info else "No server info available"
+        service_conn.unbind()
+        
+        return {
+            "success": True,
+            "message": "LDAP connection successful",
+            "server": LDAP_CONFIG["server"],
+            "server_info": server_info[:200] + "..." if len(server_info) > 200 else server_info
+        }
+        
+    except Exception as e:
+        logger.error(f"LDAP connection test failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"LDAP connection failed: {str(e)}"
+        )
+
+if __name__ == '__main__':
+    # You can also run this as a standalone script for testing
+    if len(sys.argv) > 1 and sys.argv[1] == 'test':
+        # Test mode
+        import asyncio
+        
+        async def test_auth():
+            username = input("Enter username: ").strip()
+            password = input("Enter password: ").strip()
+            
+            result = await auth.authenticate_user(username, password)
+            print(json.dumps(result, indent=2))
+        
+        asyncio.run(test_auth())
+    else:
+        # Run FastAPI server with uvicorn
+        uvicorn.run(
+            "ldap_auth_service:app",
+            host=os.getenv("FLASK_HOST", "0.0.0.0"),
+            port=int(os.getenv("FLASK_PORT", "5007")),
+            reload=False,
+            log_level="info"
+        )

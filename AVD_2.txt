@@ -1,0 +1,329 @@
+<?php
+
+namespace App\Http\Controllers\Auth;
+
+use App\Http\Controllers\Controller;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Hash;
+use App\Models\User;
+
+class LDAPAuthController extends Controller
+{
+    private $pythonServiceUrl;
+    
+    public function __construct()
+    {
+        // Configure the Python service URL
+        $this->pythonServiceUrl = env('PYTHON_LDAP_SERVICE_URL', 'http://localhost:5007');
+    }
+    
+    /**
+     * Show the login form
+     */
+    public function showLoginForm()
+    {
+        return view('auth.ldap-login');
+    }
+    
+    /**
+     * Handle LDAP authentication
+     * Python handles LDAP auth, Laravel handles database operations
+     */
+    public function authenticate(Request $request)
+    {
+        $request->validate([
+            'username' => 'required|string',
+            'password' => 'required|string',
+        ]);
+        
+        try {
+            // Step 1: Call Python LDAP service for authentication
+            $response = Http::timeout(30)->post($this->pythonServiceUrl . '/authenticate', [
+                'username' => $request->username,
+                'password' => $request->password
+            ]);
+            
+            if ($response->successful()) {
+                $data = $response->json();
+                
+                if ($data['success']) {
+                    // Step 2: LDAP authentication successful, handle database operations in Laravel
+                    $ldapUserData = $data['user_data'];
+                    
+                    // Create or update user in database
+                    $user = $this->createOrUpdateUser($ldapUserData, $request->password);
+                    
+                    if ($user) {
+                        // Step 3: Log the user in
+                        Auth::login($user);
+                        
+                        Log::info('LDAP authentication and database registration successful', [
+                            'user_id' => $user->id,
+                            'username' => $request->username,
+                            'email' => $user->email
+                        ]);
+                        
+                        return redirect()->intended('/home')->with('success', 'Welcome back!');
+                    } else {
+                        return back()->withErrors(['username' => 'Failed to create user account.']);
+                    }
+                } else {
+                    return back()->withErrors(['username' => $data['message'] ?? 'Authentication failed.']);
+                }
+            } else {
+                Log::error('Python LDAP service error', [
+                    'status' => $response->status(),
+                    'body' => $response->body()
+                ]);
+                
+                return back()->withErrors(['username' => 'Authentication service unavailable.']);
+            }
+            
+        } catch (\Exception $e) {
+            Log::error('LDAP authentication exception', [
+                'error' => $e->getMessage(),
+                'username' => $request->username
+            ]);
+            
+            return back()->withErrors(['username' => 'Authentication failed. Please try again.']);
+        }
+    }
+    
+    /**
+     * Create or update user in SQL Server database with Laratrust role assignment
+     * This mimics your original createOrUpdateUser function
+     */
+    protected function createOrUpdateUser($ldapUserData, $password)
+    {
+        try {
+            // Extract user information from LDAP data
+            $email = $ldapUserData['mail'] ?? $ldapUserData['userPrincipalName'];
+            $name = $ldapUserData['cn'] ?? $ldapUserData['displayName'] ?? $ldapUserData['sAMAccountName'];
+            $username = $ldapUserData['sAMAccountName'];
+            $userPrincipalName = $ldapUserData['userPrincipalName'];
+            
+            // Use userPrincipalName as primary email identifier (like your original function)
+            $primaryEmail = $userPrincipalName ?? $email;
+            
+            // Find existing user by email
+            $user = User::where('email', $primaryEmail)->first();
+            
+            if (!$user) {
+                // Create new user with only required fields
+                $user = User::create([
+                    'name' => $name ?? $username,
+                    'email' => $primaryEmail,
+                    'password' => Hash::make($password),
+                    'user_image' => 'default.png', // Placeholder for user image
+                ]);
+                
+                // Add Laratrust "User" role to new users
+                $user->addRole("User");
+                
+                Log::info('New LDAP user created', [
+                    'user_id' => $user->id,
+                    'email' => $primaryEmail,
+                    'username' => $username,
+                    'ldap_data' => json_encode($ldapUserData)
+                ]);
+            } else {
+                // User exists - optionally update name if changed
+                if ($user->name !== $name) {
+                    $user->update([
+                        'name' => $name,
+                        'updated_at' => now()
+                    ]);
+                }
+                
+                Log::info('Existing LDAP user logged in', [
+                    'user_id' => $user->id,
+                    'email' => $primaryEmail,
+                    'username' => $username
+                ]);
+            }
+            
+            return $user;
+            
+        } catch (\Exception $e) {
+            Log::error('Error creating/updating LDAP user', [
+                'error' => $e->getMessage(),
+                'ldap_data' => $ldapUserData
+            ]);
+            
+            return null;
+        }
+    }
+    
+    /**
+     * Get user information from LDAP (for admin purposes)
+     */
+    public function getUserInfo(Request $request)
+    {
+        $request->validate([
+            'username' => 'required|string'
+        ]);
+        
+        try {
+            $response = Http::timeout(15)->get($this->pythonServiceUrl . '/user-info/' . $request->username);
+            
+            if ($response->successful()) {
+                return response()->json($response->json());
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to fetch user information'
+                ], $response->status());
+            }
+            
+        } catch (\Exception $e) {
+            Log::error('Error fetching LDAP user info', [
+                'error' => $e->getMessage(),
+                'username' => $request->username
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Service unavailable'
+            ], 500);
+        }
+    }
+    
+    /**
+     * Check Python service health
+     */
+    public function checkServiceHealth()
+    {
+        try {
+            $response = Http::timeout(5)->get($this->pythonServiceUrl . '/health');
+            
+            if ($response->successful()) {
+                return response()->json([
+                    'status' => 'healthy',
+                    'service_response' => $response->json()
+                ]);
+            } else {
+                return response()->json([
+                    'status' => 'unhealthy',
+                    'error' => 'Service returned: ' . $response->status()
+                ], 503);
+            }
+            
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'unreachable',
+                'error' => $e->getMessage()
+            ], 503);
+        }
+    }
+    
+    /**
+     * Test LDAP connection via Python service
+     */
+    public function testLdapConnection()
+    {
+        try {
+            $response = Http::timeout(10)->get($this->pythonServiceUrl . '/test-ldap-connection');
+            
+            if ($response->successful()) {
+                return response()->json([
+                    'status' => 'success',
+                    'ldap_test' => $response->json()
+                ]);
+            } else {
+                return response()->json([
+                    'status' => 'failed',
+                    'error' => 'LDAP connection test failed',
+                    'details' => $response->body()
+                ], 503);
+            }
+            
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+    
+    /**
+     * Admin function: Sync user from LDAP without authentication
+     */
+    public function syncUserFromLdap(Request $request)
+    {
+        $request->validate([
+            'username' => 'required|string'
+        ]);
+        
+        try {
+            // Get user info from LDAP
+            $response = Http::timeout(15)->get($this->pythonServiceUrl . '/user-info/' . $request->username);
+            
+            if ($response->successful()) {
+                $data = $response->json();
+                
+                if ($data['success']) {
+                    // Create/update user without authentication
+                    $user = $this->createOrUpdateUser($data['user_data'], 'temp_password_' . time());
+                    
+                    if ($user) {
+                        return response()->json([
+                            'success' => true,
+                            'message' => 'User synced successfully',
+                            'user' => [
+                                'id' => $user->id,
+                                'name' => $user->name,
+                                'email' => $user->email,
+                                'created_at' => $user->created_at,
+                                'updated_at' => $user->updated_at
+                            ]
+                        ]);
+                    } else {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Failed to sync user'
+                        ], 500);
+                    }
+                } else {
+                    return response()->json([
+                        'success' => false,
+                        'message' => $data['message']
+                    ], 404);
+                }
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'LDAP service error'
+                ], $response->status());
+            }
+            
+        } catch (\Exception $e) {
+            Log::error('Error syncing user from LDAP', [
+                'error' => $e->getMessage(),
+                'username' => $request->username
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Sync failed: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+}
+
+=============================================
+=============================================
+
+// LDAP Authentication Routes
+Route::get('/ldap-login', [LDAPAuthController::class, 'showLoginForm'])->name('ldap.login.form');
+Route::post('/ldap-login', [LDAPAuthController::class, 'authenticate'])->name('ldap.login');
+
+// Admin/API Routes (consider adding middleware protection)
+Route::get('/ldap/user-info', [LDAPAuthController::class, 'getUserInfo'])->name('ldap.user.info');
+Route::get('/ldap/health', [LDAPAuthController::class, 'checkServiceHealth'])->name('ldap.health');
+Route::get('/ldap/test-connection', [LDAPAuthController::class, 'testLdapConnection'])->name('ldap.test');
+Route::post('/ldap/sync-user', [LDAPAuthController::class, 'syncUserFromLdap'])->name('ldap.sync.user');
+
+PYTHON_LDAP_SERVICE_URL=http://localhost:5007

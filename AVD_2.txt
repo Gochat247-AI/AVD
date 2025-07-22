@@ -31,6 +31,7 @@ class LDAPAuthController extends Controller
     /**
      * Handle LDAP authentication
      * Python handles LDAP auth, Laravel handles database operations
+     * Supports both username and email authentication
      */
     public function authenticate(Request $request)
     {
@@ -46,23 +47,26 @@ class LDAPAuthController extends Controller
                 'password' => $request->password
             ]);
             
+            // Check if we got a response (service is available)
             if ($response->successful()) {
+                // Service responded successfully
                 $data = $response->json();
                 
                 if ($data['success']) {
-                    // Step 2: LDAP authentication successful, handle database operations in Laravel
+                    // Authentication successful
                     $ldapUserData = $data['user_data'];
                     
                     // Create or update user in database
                     $user = $this->createOrUpdateUser($ldapUserData, $request->password);
                     
                     if ($user) {
-                        // Step 3: Log the user in
+                        // Log the user in
                         Auth::login($user);
                         
                         Log::info('LDAP authentication and database registration successful', [
                             'user_id' => $user->id,
-                            'username' => $request->username,
+                            'input' => $request->username,
+                            'actual_username' => $ldapUserData['sAMAccountName'] ?? 'unknown',
                             'email' => $user->email
                         ]);
                         
@@ -71,21 +75,72 @@ class LDAPAuthController extends Controller
                         return back()->withErrors(['username' => 'Failed to create user account.']);
                     }
                 } else {
-                    return back()->withErrors(['username' => $data['message'] ?? 'Authentication failed.']);
+                    // Authentication failed - show the actual error from Python
+                    $errorMessage = $data['message'] ?? 'Authentication failed';
+                    
+                    Log::warning('LDAP authentication failed', [
+                        'input' => $request->username,
+                        'error' => $errorMessage
+                    ]);
+                    
+                    return back()->withErrors(['username' => $errorMessage]);
                 }
             } else {
-                Log::error('Python LDAP service error', [
-                    'status' => $response->status(),
-                    'body' => $response->body()
-                ]);
+                // Service responded with error (401, 400, etc.)
+                $statusCode = $response->status();
+                $responseBody = $response->json();
                 
-                return back()->withErrors(['username' => 'Authentication service unavailable.']);
+                if ($statusCode == 401) {
+                    // Unauthorized - invalid credentials
+                    $errorMessage = $responseBody['detail'] ?? 'Invalid username or password';
+                    
+                    Log::warning('LDAP authentication failed - invalid credentials', [
+                        'input' => $request->username,
+                        'status' => $statusCode,
+                        'error' => $errorMessage
+                    ]);
+                    
+                    return back()->withErrors(['username' => $errorMessage]);
+                } elseif ($statusCode == 400) {
+                    // Bad request - validation error
+                    $errorMessage = $responseBody['detail'] ?? 'Invalid input provided';
+                    
+                    return back()->withErrors(['username' => $errorMessage]);
+                } else {
+                    // Other HTTP errors - service issues
+                    Log::error('Python LDAP service error', [
+                        'status' => $statusCode,
+                        'body' => $response->body(),
+                        'input' => $request->username
+                    ]);
+                    
+                    return back()->withErrors(['username' => 'Authentication service temporarily unavailable. Please try again.']);
+                }
             }
             
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            // Network/connection issues
+            Log::error('Cannot connect to LDAP authentication service', [
+                'error' => $e->getMessage(),
+                'input' => $request->username
+            ]);
+            
+            return back()->withErrors(['username' => 'Authentication service is unavailable. Please try again later.']);
+            
+        } catch (\Illuminate\Http\Client\RequestException $e) {
+            // HTTP request issues
+            Log::error('LDAP service request failed', [
+                'error' => $e->getMessage(),
+                'input' => $request->username
+            ]);
+            
+            return back()->withErrors(['username' => 'Authentication request failed. Please try again.']);
+            
         } catch (\Exception $e) {
+            // General exceptions
             Log::error('LDAP authentication exception', [
                 'error' => $e->getMessage(),
-                'username' => $request->username
+                'input' => $request->username
             ]);
             
             return back()->withErrors(['username' => 'Authentication failed. Please try again.']);
@@ -127,6 +182,7 @@ class LDAPAuthController extends Controller
                     'user_id' => $user->id,
                     'email' => $primaryEmail,
                     'username' => $username,
+                    'name' => $name,
                     'ldap_data' => json_encode($ldapUserData)
                 ]);
             } else {
@@ -141,7 +197,8 @@ class LDAPAuthController extends Controller
                 Log::info('Existing LDAP user logged in', [
                     'user_id' => $user->id,
                     'email' => $primaryEmail,
-                    'username' => $username
+                    'username' => $username,
+                    'name' => $name
                 ]);
             }
             
@@ -159,6 +216,7 @@ class LDAPAuthController extends Controller
     
     /**
      * Get user information from LDAP (for admin purposes)
+     * Supports both username and email lookup
      */
     public function getUserInfo(Request $request)
     {
@@ -249,7 +307,41 @@ class LDAPAuthController extends Controller
     }
     
     /**
+     * Test what search filter would be generated for given input
+     */
+    public function testSearchFilter(Request $request)
+    {
+        $request->validate([
+            'input' => 'required|string'
+        ]);
+        
+        try {
+            $response = Http::timeout(10)->get($this->pythonServiceUrl . '/test-filters/' . urlencode($request->input));
+            
+            if ($response->successful()) {
+                return response()->json([
+                    'status' => 'success',
+                    'filter_test' => $response->json()
+                ]);
+            } else {
+                return response()->json([
+                    'status' => 'failed',
+                    'error' => 'Filter test failed',
+                    'details' => $response->body()
+                ], 503);
+            }
+            
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+    
+    /**
      * Admin function: Sync user from LDAP without authentication
+     * Supports both username and email input
      */
     public function syncUserFromLdap(Request $request)
     {
@@ -278,7 +370,8 @@ class LDAPAuthController extends Controller
                                 'email' => $user->email,
                                 'created_at' => $user->created_at,
                                 'updated_at' => $user->updated_at
-                            ]
+                            ],
+                            'ldap_data' => $data['user_data']
                         ]);
                     } else {
                         return response()->json([
@@ -311,19 +404,29 @@ class LDAPAuthController extends Controller
             ], 500);
         }
     }
+    
+    /**
+     * Show authentication method examples
+     */
+    public function showAuthMethods()
+    {
+        return response()->json([
+            'authentication_methods' => [
+                'username' => [
+                    'example' => 'amohamed495',
+                    'description' => 'Login using sAMAccountName',
+                    'ldap_attribute' => 'sAMAccountName'
+                ],
+                'email' => [
+                    'examples' => [
+                        'amohamed495@etisalat.corp.ae',
+                        'amohamed495@eand.com'
+                    ],
+                    'description' => 'Login using email address',
+                    'ldap_attributes' => ['userPrincipalName', 'mail']
+                ]
+            ],
+            'note' => 'System automatically detects input type based on @ symbol'
+        ]);
+    }
 }
-
-=============================================
-=============================================
-
-// LDAP Authentication Routes
-Route::get('/ldap-login', [LDAPAuthController::class, 'showLoginForm'])->name('ldap.login.form');
-Route::post('/ldap-login', [LDAPAuthController::class, 'authenticate'])->name('ldap.login');
-
-// Admin/API Routes (consider adding middleware protection)
-Route::get('/ldap/user-info', [LDAPAuthController::class, 'getUserInfo'])->name('ldap.user.info');
-Route::get('/ldap/health', [LDAPAuthController::class, 'checkServiceHealth'])->name('ldap.health');
-Route::get('/ldap/test-connection', [LDAPAuthController::class, 'testLdapConnection'])->name('ldap.test');
-Route::post('/ldap/sync-user', [LDAPAuthController::class, 'syncUserFromLdap'])->name('ldap.sync.user');
-
-PYTHON_LDAP_SERVICE_URL=http://localhost:5007

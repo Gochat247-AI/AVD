@@ -22,6 +22,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Http;
 use Yethee\Tiktoken\EncoderProvider;
 
 class ProcessGooglePlayAnalysis implements ShouldQueue
@@ -99,6 +100,9 @@ class ProcessGooglePlayAnalysis implements ShouldQueue
 
             broadcast(new NewSentimentEvent());
 
+            // Send request to Python FastAPI to generate embeddings
+            $this->triggerEmbeddingGeneration();
+
         } catch (\Exception $e) {
             Log::error("Job failed: {$e->getMessage()}", [
                 'userId' => $this->userId,
@@ -115,16 +119,41 @@ class ProcessGooglePlayAnalysis implements ShouldQueue
 
             throw $e;
         }
-
     }
 
+    /**
+     * Trigger embedding generation in Python FastAPI
+     */
+    private function triggerEmbeddingGeneration()
+    {
+        try {
+            $pythonApiUrl = config('app.python_api_url', 'http://localhost:8010');
+            
+            $response = Http::timeout(30)->post($pythonApiUrl . '/embeddings/generate', [
+                'table_names' => ['CombinedReviewSentiment'], // Only process review sentiment table for Google
+                'force_regenerate' => false
+            ]);
 
-
-
-
+            if ($response->successful()) {
+                Log::info('Successfully triggered embedding generation for Google reviews', [
+                    'response' => $response->json(),
+                    'userId' => $this->userId
+                ]);
+            } else {
+                Log::warning('Failed to trigger embedding generation for Google reviews', [
+                    'status' => $response->status(),
+                    'response' => $response->body(),
+                    'userId' => $this->userId
+                ]);
+            }
+        } catch (\Exception $e) {
+            Log::error('Error triggering embedding generation for Google reviews', [
+                'error' => $e->getMessage(),
+                'userId' => $this->userId
+            ]);
+        }
+    }
 }
-
-
 
 <?php
 
@@ -149,6 +178,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Http;
 use Yethee\Tiktoken\EncoderProvider;
 
 class ProcessAppleStoreAnalysis implements ShouldQueue
@@ -227,6 +257,8 @@ class ProcessAppleStoreAnalysis implements ShouldQueue
 
             broadcast(new NewSentimentEvent());
 
+            // Send request to Python FastAPI to generate embeddings
+            $this->triggerEmbeddingGeneration();
 
         }  catch (\Exception $e) {
             Log::error("Job failed: {$e->getMessage()}", [
@@ -243,12 +275,39 @@ class ProcessAppleStoreAnalysis implements ShouldQueue
             }
 
             throw $e;
-    
         }
-
-
     }
 
+    /**
+     * Trigger embedding generation in Python FastAPI
+     */
+    private function triggerEmbeddingGeneration()
+    {
+        try {
+            $pythonApiUrl = config('app.python_api_url', 'http://localhost:8010');
+            
+            $response = Http::timeout(30)->post($pythonApiUrl . '/embeddings/generate', [
+                'table_names' => ['CombinedReviewSentiment'], // Only process review sentiment table for Apple
+                'force_regenerate' => false
+            ]);
 
+            if ($response->successful()) {
+                Log::info('Successfully triggered embedding generation for Apple reviews', [
+                    'response' => $response->json(),
+                    'userId' => $this->userId
+                ]);
+            } else {
+                Log::warning('Failed to trigger embedding generation for Apple reviews', [
+                    'status' => $response->status(),
+                    'response' => $response->body(),
+                    'userId' => $this->userId
+                ]);
+            }
+        } catch (\Exception $e) {
+            Log::error('Error triggering embedding generation for Apple reviews', [
+                'error' => $e->getMessage(),
+                'userId' => $this->userId
+            ]);
+        }
+    }
 }
-

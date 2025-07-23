@@ -1,62 +1,254 @@
-# FastAPI and web framework dependencies
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-pydantic==2.5.0
+<?php
 
-# Database drivers
-pyodbc==5.0.1
-pypyodbc==1.3.6
+namespace App\Jobs;
 
-# OpenAI API
-openai==1.3.7
+use App\Events\NewSentimentEvent;
+use App\Http\Controllers\SentimentAssets\SentimentAssetsController;
+use App\Models\GenericAttribute;
+use App\Models\GoogleApp;
+use App\Models\GoogleReview;
+use App\Models\GoogleReviewSentiment;
+use App\Models\User;
+use App\Models\UserJob;
+use App\Notifications\GoogleSentiment;
+use App\Notifications\InsufficientTokensNotification;
+use App\Services\OpenAIConfig;
+use App\Services\OpenAIPrompt;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
+use Yethee\Tiktoken\EncoderProvider;
 
-# Environment and configuration
-python-dotenv==1.0.0
+class ProcessGooglePlayAnalysis implements ShouldQueue
+{
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-# Additional utilities
-python-multipart==0.0.6  # For form data handling if needed
-httpx==0.25.2  # For HTTP client functionality if needed
+    public $timeout = 3600; // Timeout in seconds
+    protected $requestData;
+    protected $userId;
+    /**
+     * Create a new job instance.
+     */
+    public function __construct($requestData, $userId)
+    {
+        $this->requestData = $requestData;
+        $this->userId = $userId;
+    }
 
-# Development dependencies (optional)
-pytest==7.4.3
-pytest-asyncio==0.21.1
-black==23.11.0
-flake8==6.1.0
+    /**
+     * Execute the job.
+     */
+    public function handle(): void
+    {
+        $validatedData = $this->requestData;
+        $user = User::find($this->userId);
 
-============================================================
+        try {
 
-# Environment Configuration
-ENVIRONMENT=production
+            // Save job details in `user_jobs`
+            $job = new UserJob([
+                'job_id'        => $this->job->getJobId(),
+                'status'        => 'processing', // or any initial status
+                'request_type'  => 'sentiment',
+                'request_count' => $validatedData['number_of_reviews'],
+                'completed_count' => 0, // set to 0 at the start
+                'user_id' => $user->id
+            ]);
 
-# OpenAI API Configuration
-OPENAI_API_KEY=your_openai_api_key_here
+            // Assuming this is associated with a GoogleApp
+            $googleApp = GoogleApp::find($validatedData['appId']);
+            $googleApp->jobs()->save($job); // Saving polymorphic relation
+            $jobId = $job->id;
 
-# Production Database Configuration (Kerberos Authentication)
-MSSQL_PROD_SERVER=AS2480DXBDB05
-MSSQL_PROD_PORT=1433
-MSSQL_PROD_DATABASE=gochat247
+            if (!$user) {
+                Log::error('User not found', ['userId' => $this->userId]);
+                return;
+            }
+            $assets = new SentimentAssetsController();
 
-# Alternative: SQL Server Authentication (if needed instead of Kerberos)
-# Uncomment these lines if you want to use SQL Server authentication
-# MSSQL_USERNAME=your_database_username
-# MSSQL_PASSWORD=your_database_password
+            $reviews = $assets->fetchReviews($validatedData['appId'], $validatedData['number_of_reviews'], "google");
+            
+            $brandDetails = $assets->getBrandDetails($validatedData['appId'], "google");
 
-# Local Development Database Configuration (fallback)
-# These are used when ENVIRONMENT is set to "local"
-MSSQL_SERVER=Mohamed
-MSSQL_DATABASE=gochat247
+            if (empty($brandDetails)) {
+                Log::error('App details not found', ['appId' => $validatedData['appId']]);
+                return;
+            }
 
-# Staging Database Configuration (if needed)
-# These are used when ENVIRONMENT is set to "staging"
-MSSQL_STAGING_SERVER=staging-server
-MSSQL_STAGING_PORT=1433
-MSSQL_STAGING_DATABASE=gochat247
+            $openAIPrompt = new OpenAIPrompt();
+            $prompt = $openAIPrompt->sentimentAnalysisPrompt($brandDetails);
 
-# FastAPI Configuration (optional)
-# FASTAPI_HOST=0.0.0.0
-# FASTAPI_PORT=8000
-# FASTAPI_DEBUG=false
+            $encoder = (new EncoderProvider())->getForModel('gpt-4o');
 
-# Logging Configuration (optional)
-# LOG_LEVEL=INFO
-# LOG_FORMAT=json
+            $assets->processMultipleReviews($encoder, $user, $reviews, $prompt, $brandDetails['brandId'], "google", $jobId);
+
+            // Update job details after processing
+            $job->update([
+                'status' => 'completed',  // Update the status to completed
+            ]);
+            
+
+            if ($user->user_token > 0) {
+                $user->notify(new GoogleSentiment ($brandDetails['brandName'], $brandDetails['brandId']));
+            }
+
+            broadcast(new NewSentimentEvent());
+
+        } catch (\Exception $e) {
+            Log::error("Job failed: {$e->getMessage()}", [
+                'userId' => $this->userId,
+                'appId' => $validatedData['appId'] ?? null,
+                'exception' => $e,
+            ]);
+    
+            $job = UserJob::where('job_id', $this->job->getJobId())->first();
+            if ($job) {
+                $job->update([
+                    'status' => 'failed',
+                ]);
+            }
+
+            throw $e;
+        }
+
+    }
+
+
+
+
+
+}
+
+
+
+<?php
+
+namespace App\Jobs;
+
+use App\Events\NewSentimentEvent;
+use App\Http\Controllers\SentimentAssets\SentimentAssetsController;
+use App\Models\AppleApp;
+use App\Models\AppleReview;
+use App\Models\AppleReviewSentiment;
+use App\Models\GenericAttribute;
+use App\Models\User;
+use App\Models\UserJob;
+use App\Notifications\AppleSentiment;
+use App\Notifications\InsufficientTokensNotification;
+use App\Services\OpenAIConfig;
+use App\Services\OpenAIPrompt;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
+use Yethee\Tiktoken\EncoderProvider;
+
+class ProcessAppleStoreAnalysis implements ShouldQueue
+{
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    public $timeout = 3600; // Timeout in seconds
+    protected $requestData;
+    protected $userId;
+
+    /**
+     * Create a new job instance.
+     */
+    public function __construct($requestData, $userId)
+    {
+        $this->requestData = $requestData;
+        $this->userId = $userId;
+    }
+
+    /**
+     * Execute the job.
+     */
+    public function handle(): void
+    {
+        $validatedData = $this->requestData;
+        $user = User::find($this->userId);
+
+        try {
+
+            // Save job details in `user_jobs`
+            $job = new UserJob([
+                'job_id' => $this->job->getJobId(),
+                'status' => 'processing', // or any initial status
+                'request_type'  => 'sentiment',
+                'request_count' => $validatedData['number_of_reviews'],
+                'completed_count' => 0, // set to 0 at the start
+                'user_id' => $user->id
+            ]);
+            
+            $appleApp = AppleApp::find($validatedData['appId']);
+            $appleApp->jobs()->save($job);
+            $jobId = $job->id;
+
+
+            if (!$user) {
+                Log::error('User not found', ['userId' => $this->userId]);
+                return;
+            }
+
+            $assets = new SentimentAssetsController();
+
+            $reviews = $assets->fetchReviews($validatedData['appId'], $validatedData['number_of_reviews'], "apple");
+
+            $brandDetails = $assets->getBrandDetails($validatedData['appId'], "apple");
+
+            if (empty($brandDetails)) {
+                Log::error('App details not found', ['appId' => $validatedData['appId']]);
+                return;
+            }
+
+            $openAIPrompt = new OpenAIPrompt();
+            $prompt = $openAIPrompt->sentimentAnalysisPrompt($brandDetails);
+
+            $encoder = (new EncoderProvider())->getForModel('gpt-4o');
+
+            $assets->processMultipleReviews($encoder, $user, $reviews, $prompt, $brandDetails['brandId'], "apple", $jobId);
+
+            // Update job details after processing
+            $job->update([
+                'status' => 'completed',  // Update the status to completed
+            ]);
+            
+            if ($user->user_token > 0) {
+                $user->notify(new AppleSentiment ($brandDetails['brandName'], $brandDetails['brandId']));
+            }
+
+            broadcast(new NewSentimentEvent());
+
+
+        }  catch (\Exception $e) {
+            Log::error("Job failed: {$e->getMessage()}", [
+                'userId' => $this->userId,
+                'appId' => $validatedData['appId'] ?? null,
+                'exception' => $e,
+            ]);
+    
+            $job = UserJob::where('job_id', $this->job->getJobId())->first();
+            if ($job) {
+                $job->update([
+                    'status' => 'failed',
+                ]);
+            }
+
+            throw $e;
+    
+        }
+
+
+    }
+
+
+}
+

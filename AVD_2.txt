@@ -1,432 +1,62 @@
-<?php
+# FastAPI and web framework dependencies
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
 
-namespace App\Http\Controllers\Auth;
+# Database drivers
+pyodbc==5.0.1
+pypyodbc==1.3.6
 
-use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Hash;
-use App\Models\User;
+# OpenAI API
+openai==1.3.7
 
-class LDAPAuthController extends Controller
-{
-    private $pythonServiceUrl;
-    
-    public function __construct()
-    {
-        // Configure the Python service URL
-        $this->pythonServiceUrl = env('PYTHON_LDAP_SERVICE_URL', 'http://localhost:5007');
-    }
-    
-    /**
-     * Show the login form
-     */
-    public function showLoginForm()
-    {
-        return view('auth.ldap-login');
-    }
-    
-    /**
-     * Handle LDAP authentication
-     * Python handles LDAP auth, Laravel handles database operations
-     * Supports both username and email authentication
-     */
-    public function authenticate(Request $request)
-    {
-        $request->validate([
-            'username' => 'required|string',
-            'password' => 'required|string',
-        ]);
-        
-        try {
-            // Step 1: Call Python LDAP service for authentication
-            $response = Http::timeout(30)->post($this->pythonServiceUrl . '/authenticate', [
-                'username' => $request->username,
-                'password' => $request->password
-            ]);
-            
-            // Check if we got a response (service is available)
-            if ($response->successful()) {
-                // Service responded successfully
-                $data = $response->json();
-                
-                if ($data['success']) {
-                    // Authentication successful
-                    $ldapUserData = $data['user_data'];
-                    
-                    // Create or update user in database
-                    $user = $this->createOrUpdateUser($ldapUserData, $request->password);
-                    
-                    if ($user) {
-                        // Log the user in
-                        Auth::login($user);
-                        
-                        Log::info('LDAP authentication and database registration successful', [
-                            'user_id' => $user->id,
-                            'input' => $request->username,
-                            'actual_username' => $ldapUserData['sAMAccountName'] ?? 'unknown',
-                            'email' => $user->email
-                        ]);
-                        
-                        return redirect()->intended('/home')->with('success', 'Welcome back!');
-                    } else {
-                        return back()->withErrors(['username' => 'Failed to create user account.']);
-                    }
-                } else {
-                    // Authentication failed - show the actual error from Python
-                    $errorMessage = $data['message'] ?? 'Authentication failed';
-                    
-                    Log::warning('LDAP authentication failed', [
-                        'input' => $request->username,
-                        'error' => $errorMessage
-                    ]);
-                    
-                    return back()->withErrors(['username' => $errorMessage]);
-                }
-            } else {
-                // Service responded with error (401, 400, etc.)
-                $statusCode = $response->status();
-                $responseBody = $response->json();
-                
-                if ($statusCode == 401) {
-                    // Unauthorized - invalid credentials
-                    $errorMessage = $responseBody['detail'] ?? 'Invalid username or password';
-                    
-                    Log::warning('LDAP authentication failed - invalid credentials', [
-                        'input' => $request->username,
-                        'status' => $statusCode,
-                        'error' => $errorMessage
-                    ]);
-                    
-                    return back()->withErrors(['username' => $errorMessage]);
-                } elseif ($statusCode == 400) {
-                    // Bad request - validation error
-                    $errorMessage = $responseBody['detail'] ?? 'Invalid input provided';
-                    
-                    return back()->withErrors(['username' => $errorMessage]);
-                } else {
-                    // Other HTTP errors - service issues
-                    Log::error('Python LDAP service error', [
-                        'status' => $statusCode,
-                        'body' => $response->body(),
-                        'input' => $request->username
-                    ]);
-                    
-                    return back()->withErrors(['username' => 'Authentication service temporarily unavailable. Please try again.']);
-                }
-            }
-            
-        } catch (\Illuminate\Http\Client\ConnectionException $e) {
-            // Network/connection issues
-            Log::error('Cannot connect to LDAP authentication service', [
-                'error' => $e->getMessage(),
-                'input' => $request->username
-            ]);
-            
-            return back()->withErrors(['username' => 'Authentication service is unavailable. Please try again later.']);
-            
-        } catch (\Illuminate\Http\Client\RequestException $e) {
-            // HTTP request issues
-            Log::error('LDAP service request failed', [
-                'error' => $e->getMessage(),
-                'input' => $request->username
-            ]);
-            
-            return back()->withErrors(['username' => 'Authentication request failed. Please try again.']);
-            
-        } catch (\Exception $e) {
-            // General exceptions
-            Log::error('LDAP authentication exception', [
-                'error' => $e->getMessage(),
-                'input' => $request->username
-            ]);
-            
-            return back()->withErrors(['username' => 'Authentication failed. Please try again.']);
-        }
-    }
-    
-    /**
-     * Create or update user in SQL Server database with Laratrust role assignment
-     * This mimics your original createOrUpdateUser function
-     */
-    protected function createOrUpdateUser($ldapUserData, $password)
-    {
-        try {
-            // Extract user information from LDAP data
-            $email = $ldapUserData['mail'] ?? $ldapUserData['userPrincipalName'];
-            $name = $ldapUserData['cn'] ?? $ldapUserData['displayName'] ?? $ldapUserData['sAMAccountName'];
-            $username = $ldapUserData['sAMAccountName'];
-            $userPrincipalName = $ldapUserData['userPrincipalName'];
-            
-            // Use userPrincipalName as primary email identifier (like your original function)
-            $primaryEmail = $userPrincipalName ?? $email;
-            
-            // Find existing user by email
-            $user = User::where('email', $primaryEmail)->first();
-            
-            if (!$user) {
-                // Create new user with only required fields
-                $user = User::create([
-                    'name' => $name ?? $username,
-                    'email' => $primaryEmail,
-                    'password' => Hash::make($password),
-                    'user_image' => 'default.png', // Placeholder for user image
-                ]);
-                
-                // Add Laratrust "User" role to new users
-                $user->addRole("User");
-                
-                Log::info('New LDAP user created', [
-                    'user_id' => $user->id,
-                    'email' => $primaryEmail,
-                    'username' => $username,
-                    'name' => $name,
-                    'ldap_data' => json_encode($ldapUserData)
-                ]);
-            } else {
-                // User exists - optionally update name if changed
-                if ($user->name !== $name) {
-                    $user->update([
-                        'name' => $name,
-                        'updated_at' => now()
-                    ]);
-                }
-                
-                Log::info('Existing LDAP user logged in', [
-                    'user_id' => $user->id,
-                    'email' => $primaryEmail,
-                    'username' => $username,
-                    'name' => $name
-                ]);
-            }
-            
-            return $user;
-            
-        } catch (\Exception $e) {
-            Log::error('Error creating/updating LDAP user', [
-                'error' => $e->getMessage(),
-                'ldap_data' => $ldapUserData
-            ]);
-            
-            return null;
-        }
-    }
-    
-    /**
-     * Get user information from LDAP (for admin purposes)
-     * Supports both username and email lookup
-     */
-    public function getUserInfo(Request $request)
-    {
-        $request->validate([
-            'username' => 'required|string'
-        ]);
-        
-        try {
-            $response = Http::timeout(15)->get($this->pythonServiceUrl . '/user-info/' . $request->username);
-            
-            if ($response->successful()) {
-                return response()->json($response->json());
-            } else {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Failed to fetch user information'
-                ], $response->status());
-            }
-            
-        } catch (\Exception $e) {
-            Log::error('Error fetching LDAP user info', [
-                'error' => $e->getMessage(),
-                'username' => $request->username
-            ]);
-            
-            return response()->json([
-                'success' => false,
-                'message' => 'Service unavailable'
-            ], 500);
-        }
-    }
-    
-    /**
-     * Check Python service health
-     */
-    public function checkServiceHealth()
-    {
-        try {
-            $response = Http::timeout(5)->get($this->pythonServiceUrl . '/health');
-            
-            if ($response->successful()) {
-                return response()->json([
-                    'status' => 'healthy',
-                    'service_response' => $response->json()
-                ]);
-            } else {
-                return response()->json([
-                    'status' => 'unhealthy',
-                    'error' => 'Service returned: ' . $response->status()
-                ], 503);
-            }
-            
-        } catch (\Exception $e) {
-            return response()->json([
-                'status' => 'unreachable',
-                'error' => $e->getMessage()
-            ], 503);
-        }
-    }
-    
-    /**
-     * Test LDAP connection via Python service
-     */
-    public function testLdapConnection()
-    {
-        try {
-            $response = Http::timeout(10)->get($this->pythonServiceUrl . '/test-ldap-connection');
-            
-            if ($response->successful()) {
-                return response()->json([
-                    'status' => 'success',
-                    'ldap_test' => $response->json()
-                ]);
-            } else {
-                return response()->json([
-                    'status' => 'failed',
-                    'error' => 'LDAP connection test failed',
-                    'details' => $response->body()
-                ], 503);
-            }
-            
-        } catch (\Exception $e) {
-            return response()->json([
-                'status' => 'error',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-    
-    /**
-     * Test what search filter would be generated for given input
-     */
-    public function testSearchFilter(Request $request)
-    {
-        $request->validate([
-            'input' => 'required|string'
-        ]);
-        
-        try {
-            $response = Http::timeout(10)->get($this->pythonServiceUrl . '/test-filters/' . urlencode($request->input));
-            
-            if ($response->successful()) {
-                return response()->json([
-                    'status' => 'success',
-                    'filter_test' => $response->json()
-                ]);
-            } else {
-                return response()->json([
-                    'status' => 'failed',
-                    'error' => 'Filter test failed',
-                    'details' => $response->body()
-                ], 503);
-            }
-            
-        } catch (\Exception $e) {
-            return response()->json([
-                'status' => 'error',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-    
-    /**
-     * Admin function: Sync user from LDAP without authentication
-     * Supports both username and email input
-     */
-    public function syncUserFromLdap(Request $request)
-    {
-        $request->validate([
-            'username' => 'required|string'
-        ]);
-        
-        try {
-            // Get user info from LDAP
-            $response = Http::timeout(15)->get($this->pythonServiceUrl . '/user-info/' . $request->username);
-            
-            if ($response->successful()) {
-                $data = $response->json();
-                
-                if ($data['success']) {
-                    // Create/update user without authentication
-                    $user = $this->createOrUpdateUser($data['user_data'], 'temp_password_' . time());
-                    
-                    if ($user) {
-                        return response()->json([
-                            'success' => true,
-                            'message' => 'User synced successfully',
-                            'user' => [
-                                'id' => $user->id,
-                                'name' => $user->name,
-                                'email' => $user->email,
-                                'created_at' => $user->created_at,
-                                'updated_at' => $user->updated_at
-                            ],
-                            'ldap_data' => $data['user_data']
-                        ]);
-                    } else {
-                        return response()->json([
-                            'success' => false,
-                            'message' => 'Failed to sync user'
-                        ], 500);
-                    }
-                } else {
-                    return response()->json([
-                        'success' => false,
-                        'message' => $data['message']
-                    ], 404);
-                }
-            } else {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'LDAP service error'
-                ], $response->status());
-            }
-            
-        } catch (\Exception $e) {
-            Log::error('Error syncing user from LDAP', [
-                'error' => $e->getMessage(),
-                'username' => $request->username
-            ]);
-            
-            return response()->json([
-                'success' => false,
-                'message' => 'Sync failed: ' . $e->getMessage()
-            ], 500);
-        }
-    }
-    
-    /**
-     * Show authentication method examples
-     */
-    public function showAuthMethods()
-    {
-        return response()->json([
-            'authentication_methods' => [
-                'username' => [
-                    'example' => 'amohamed495',
-                    'description' => 'Login using sAMAccountName',
-                    'ldap_attribute' => 'sAMAccountName'
-                ],
-                'email' => [
-                    'examples' => [
-                        'amohamed495@etisalat.corp.ae',
-                        'amohamed495@eand.com'
-                    ],
-                    'description' => 'Login using email address',
-                    'ldap_attributes' => ['userPrincipalName', 'mail']
-                ]
-            ],
-            'note' => 'System automatically detects input type based on @ symbol'
-        ]);
-    }
-}
+# Environment and configuration
+python-dotenv==1.0.0
+
+# Additional utilities
+python-multipart==0.0.6  # For form data handling if needed
+httpx==0.25.2  # For HTTP client functionality if needed
+
+# Development dependencies (optional)
+pytest==7.4.3
+pytest-asyncio==0.21.1
+black==23.11.0
+flake8==6.1.0
+
+============================================================
+
+# Environment Configuration
+ENVIRONMENT=production
+
+# OpenAI API Configuration
+OPENAI_API_KEY=your_openai_api_key_here
+
+# Production Database Configuration (Kerberos Authentication)
+MSSQL_PROD_SERVER=AS2480DXBDB05
+MSSQL_PROD_PORT=1433
+MSSQL_PROD_DATABASE=gochat247
+
+# Alternative: SQL Server Authentication (if needed instead of Kerberos)
+# Uncomment these lines if you want to use SQL Server authentication
+# MSSQL_USERNAME=your_database_username
+# MSSQL_PASSWORD=your_database_password
+
+# Local Development Database Configuration (fallback)
+# These are used when ENVIRONMENT is set to "local"
+MSSQL_SERVER=Mohamed
+MSSQL_DATABASE=gochat247
+
+# Staging Database Configuration (if needed)
+# These are used when ENVIRONMENT is set to "staging"
+MSSQL_STAGING_SERVER=staging-server
+MSSQL_STAGING_PORT=1433
+MSSQL_STAGING_DATABASE=gochat247
+
+# FastAPI Configuration (optional)
+# FASTAPI_HOST=0.0.0.0
+# FASTAPI_PORT=8000
+# FASTAPI_DEBUG=false
+
+# Logging Configuration (optional)
+# LOG_LEVEL=INFO
+# LOG_FORMAT=json

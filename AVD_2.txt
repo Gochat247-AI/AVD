@@ -101,3 +101,14 @@ MiB Swap:  16384.0 total,  16374.6 free,      9.4 used.  24515.8 avail Mem
      46 root     -51   0       0      0      0 S   0.0   0.0   0:00.00 idle_inject/5
      47 root      rt   0       0      0      0 S   0.0   0.0   0:20.87 migration/5
      48 root      20   0       0      0      0 S   0.0   0.0   1:06.00 ksoftirqd/5
+
+
+
+
+
+
+
+# Check which php.ini PHP-FPM is using
+sudo php-fpm -t
+# or
+ps aux | grep php-fpm

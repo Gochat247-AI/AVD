@@ -1,3 +1,13 @@
+[root@DX00133 ~]# php -r "echo ini_get('memory_limit');"
+1024M[root@DX00133 ~]# ^C
+[root@DX00133 ~]# sudo php-fpm -t
+[24-Jul-2025 17:11:03] NOTICE: configuration file /etc/php-fpm.conf test is successful
+
+[root@DX00133 ~]#
+
+
+
+
 ;;;;;;;;;;;;;;;;;;;;;
 ; FPM Configuration ;
 ;;;;;;;;;;;;;;;;;;;;;

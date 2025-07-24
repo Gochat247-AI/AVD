@@ -408,3 +408,10 @@ The exception occurred while attempting to log: The stream or file "/var/www/htm
 [24-Jul-2025 17:31:20] NOTICE: ready to handle connections
 [24-Jul-2025 17:31:20] NOTICE: systemd monitor interval set to 10000ms
 
+
+# Change ownership of laravel.log to nginx:nginx
+sudo chown nginx:nginx /var/www/html/Web-Scrapping-Backend/storage/logs/laravel.log
+
+# Also fix permissions
+sudo chmod 664 /var/www/html/Web-Scrapping-Backend/storage/logs/laravel.log
+

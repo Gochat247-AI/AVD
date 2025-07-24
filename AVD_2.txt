@@ -25,3 +25,6 @@ sudo systemctl status php-fpm
 
 # Check Nginx status
 sudo systemctl status nginx
+
+
+memory_limit = 1024M

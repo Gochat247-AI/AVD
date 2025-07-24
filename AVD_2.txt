@@ -1,101 +1,10 @@
-public function generateReportAIReport(Request $request)
-{
-    ini_set('memory_limit', '1024M');
-    ini_set('max_execution_time', 300); // 5 minutes
+# Method 1: Use php command
+php --ini
 
-    $app_id                             = $request->app_id;
-    $prompt_id                          = $request->prompt_id;
-    $prompt                             = Prompt::where("id", $prompt_id)->value("prompt");
-    $start_ai_apple_reviews_date       = $request->start_ai_apple_reviews_date;
-    $end_ai_apple_reviews_date         = $request->end_ai_apple_reviews_date;
+# Method 2: Check with phpinfo
+php -r "echo php_ini_loaded_file();"
 
-    $currentDate                        = Carbon::now();
-    $threeMonthsAgo                     = $currentDate->subMonths(3);
-
-    // Build the query but don't execute with get() yet
-    if (!is_null($start_ai_apple_reviews_date) && !is_null($end_ai_apple_reviews_date)) {
-        $appleReviewsQuery = DB::table('AppleReview')
-            ->join('AppleApp', 'AppleReview.app_id', '=', 'AppleApp.id')
-            ->where('AppleApp.id', $app_id)
-            ->whereBetween('AppleReview.updated', [$start_ai_apple_reviews_date, $end_ai_apple_reviews_date])
-            ->select('AppleReview.text');
-    } else {
-        $appleReviewsQuery = DB::table('AppleReview')
-            ->select('AppleReview.text')
-            ->join('AppleApp', 'AppleReview.app_id', '=', 'AppleApp.id')
-            ->where('AppleApp.id', $app_id)
-            ->whereDate('AppleReview.updated', '>=', $threeMonthsAgo);
-    }
-
-    // Process in chunks instead of loading all at once
-    $combinedValuesArray = [];
-    $appleReviewsQuery->chunk(1000, function ($appleReviews) use (&$combinedValuesArray) {
-        foreach ($appleReviews as $item) {
-            if (!empty($item->text)) {
-                $combinedValuesArray['text'][] = $item->text;
-            }
-        }
-        // Clear the chunk from memory
-        unset($appleReviews);
-    });
-
-    $stringRepresentation = '';
-    foreach ($combinedValuesArray as $key => $values) {
-        foreach ($values as $value) {
-            if ($stringRepresentation !== '') {
-                $stringRepresentation .= ', ';
-            }
-            $stringRepresentation .= "$key: $value";
-        }
-    }
-
-    // Clear the array from memory once we're done with it
-    unset($combinedValuesArray);
-
-    $text = $stringRepresentation;
-    $user = User::find(Auth::user()->id);
-
-    // Check token availability
-    $provider = new EncoderProvider();
-    $encoder = $provider->getForModel('gpt-4-turbo');
-    $systemMessage = ['role' => 'system', 'content' => $prompt];
-    $userMessage = ['role' => 'user', 'content' => $text];
-    $systemMessageTokens = count($encoder->encode($systemMessage['content']));
-    $userMessageTokens = count($encoder->encode($userMessage['content']));
-    $inputTokens = $systemMessageTokens + $userMessageTokens;
-
-    if ($user->user_token < $inputTokens) {
-        Log::info('Insufficient tokens for user', ['userId' => $user->id]);
-        return response()->json(['error' => 'insufficient_tokens'], 400);
-    }
-
-    if (empty($text)) {
-        $text = 'No significant reviews available for analysis. please dont show the user the report. tell the user to make sentiment analysis first.';
-    }
-
-    // Instantiate OpenAIConfig class and send request
-    $openAI = new OpenAIConfig();
-    $responseBody = $openAI->sendRequest($prompt, $text);
-
-    if ($responseBody && isset($responseBody['choices'][0]['message']['content'])) {
-        $report = $responseBody['choices'][0]['message']['content'];
-
-        // Check for output tokens and deduct from user
-        $outputTokens = count($encoder->encode($report));
-        if ($user->user_token < $outputTokens) {
-            Log::info('Insufficient tokens for user', ['userId' => $user->id]);
-            return response()->json(['error' => 'insufficient_tokens'], 400);
-        }
-
-        if (!$user->hasPermission("tokens_unlimited")) {
-            $user->user_token -= ($inputTokens + $outputTokens);
-            $user->save();
-        }
-
-        broadcast(new NewSentimentEvent());
-    } else {
-        $report = 'Error processing request.';
-    }
-
-    return response()->json(['report' => $report]);
-}
+# Method 3: Common locations to check
+ls -la /etc/php.ini
+ls -la /etc/php/*/cli/php.ini
+ls -la /usr/local/etc/php/php.ini

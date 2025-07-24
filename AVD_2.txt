@@ -1,270 +1,101 @@
+public function generateReportAIReport(Request $request)
+{
+    ini_set('memory_limit', '1024M');
+    ini_set('max_execution_time', 300); // 5 minutes
 
-    "message": "Allowed memory size of 536870912 bytes exhausted (tried to allocate 89316776 bytes)",
-    "exception": "Symfony\\Component\\ErrorHandler\\Error\\FatalError",
-    "file": "/var/www/html/Web-Scrapping-Backend/vendor/monolog/monolog/src/Monolog/Formatter/LineFormatter.php",
-    "line": 242,
-    "trace": [
-        {
-            "function": "__construct",
-            "type": "->",
-            "class": "Symfony\\Component\\ErrorHandler\\Error\\FatalError",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Foundation/Bootstrap/HandleExceptions.php",
-            "line": 245
-        },
-        {
-            "function": "fatalErrorFromPhpError",
-            "type": "->",
-            "class": "Illuminate\\Foundation\\Bootstrap\\HandleExceptions",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Foundation/Bootstrap/HandleExceptions.php",
-            "line": 232
-        },
-        {
-            "function": "handleShutdown",
-            "type": "->",
-            "class": "Illuminate\\Foundation\\Bootstrap\\HandleExceptions",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Foundation/Bootstrap/HandleExceptions.php",
-            "line": 256
-        },
-        {
-            "function": "Illuminate\\Foundation\\Bootstrap\\{closure:/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Foundation/Bootstrap/HandleExceptions.php:255-257}",
-            "type": "->",
-            "class": "Illuminate\\Foundation\\Bootstrap\\HandleExceptions",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Foundation/Bootstrap/HandleExceptions.php",
-            "line": 0
-        },
-        {
-            "function": "preg_replace",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/monolog/monolog/src/Monolog/Formatter/LineFormatter.php",
-            "line": 242
-        },
-        {
-            "function": "replaceNewlines",
-            "type": "->",
-            "class": "Monolog\\Formatter\\LineFormatter",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/monolog/monolog/src/Monolog/Formatter/LineFormatter.php",
-            "line": 200
-        },
-        {
-            "function": "stringify",
-            "type": "->",
-            "class": "Monolog\\Formatter\\LineFormatter",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/monolog/monolog/src/Monolog/Formatter/LineFormatter.php",
-            "line": 168
-        },
-        {
-            "function": "format",
-            "type": "->",
-            "class": "Monolog\\Formatter\\LineFormatter",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php",
-            "line": 42
-        },
-        {
-            "function": "handle",
-            "type": "->",
-            "class": "Monolog\\Handler\\StreamHandler",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/monolog/monolog/src/Monolog/Logger.php",
-            "line": 391
-        },
-        {
-            "function": "addRecord",
-            "type": "->",
-            "class": "Monolog\\Logger",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/monolog/monolog/src/Monolog/Logger.php",
-            "line": 646
-        },
-        {
-            "function": "error",
-            "type": "->",
-            "class": "Monolog\\Logger",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Log/Logger.php",
-            "line": 184
-        },
-        {
-            "function": "writeLog",
-            "type": "->",
-            "class": "Illuminate\\Log\\Logger",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Log/Logger.php",
-            "line": 97
-        },
-        {
-            "function": "error",
-            "type": "->",
-            "class": "Illuminate\\Log\\Logger",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Log/LogManager.php",
-            "line": 701
-        },
-        {
-            "function": "error",
-            "type": "->",
-            "class": "Illuminate\\Log\\LogManager",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Foundation/Exceptions/Handler.php",
-            "line": 380
-        },
-        {
-            "function": "reportThrowable",
-            "type": "->",
-            "class": "App\\Exceptions\\Handler",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Foundation/Exceptions/Handler.php",
-            "line": 343
-        },
-        {
-            "function": "report",
-            "type": "->",
-            "class": "App\\Exceptions\\Handler",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Routing/Pipeline.php",
-            "line": 49
-        },
-        {
-            "function": "handleException",
-            "type": "->",
-            "class": "Illuminate\\Routing\\Pipeline",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Pipeline/Pipeline.php",
-            "line": 172
-        },
-        {
-            "function": "Illuminate\\Pipeline\\{closure:/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Pipeline/Pipeline.php:168-174}",
-            "type": "->",
-            "class": "Illuminate\\Routing\\Pipeline",
-            "file": "/var/www/html/Web-Scrapping-Backend/app/Http/Middleware/HttpsProtocol.php",
-            "line": 15
-        },
-        {
-            "function": "handle",
-            "type": "->",
-            "class": "App\\Http\\Middleware\\HttpsProtocol",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Pipeline/Pipeline.php",
-            "line": 209
-        },
-        {
-            "function": "Illuminate\\Pipeline\\{closure:/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Pipeline/Pipeline.php:185-216}",
-            "type": "->",
-            "class": "Illuminate\\Routing\\Pipeline",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Foundation/Http/Middleware/TransformsRequest.php",
-            "line": 21
-        },
-        {
-            "function": "handle",
-            "type": "->",
-            "class": "Illuminate\\Foundation\\Http\\Middleware\\ConvertEmptyStringsToNull",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Foundation/Http/Middleware/ConvertEmptyStringsToNull.php",
-            "line": 31
-        },
-        {
-            "function": "handle",
-            "type": "->",
-            "class": "Illuminate\\Foundation\\Http\\Middleware\\ConvertEmptyStringsToNull",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Pipeline/Pipeline.php",
-            "line": 209
-        },
-        {
-            "function": "Illuminate\\Pipeline\\{closure:/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Pipeline/Pipeline.php:185-216}",
-            "type": "->",
-            "class": "Illuminate\\Routing\\Pipeline",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Foundation/Http/Middleware/TransformsRequest.php",
-            "line": 21
-        },
-        {
-            "function": "handle",
-            "type": "->",
-            "class": "App\\Http\\Middleware\\TrimStrings",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Foundation/Http/Middleware/TrimStrings.php",
-            "line": 51
-        },
-        {
-            "function": "handle",
-            "type": "->",
-            "class": "App\\Http\\Middleware\\TrimStrings",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Pipeline/Pipeline.php",
-            "line": 209
-        },
-        {
-            "function": "Illuminate\\Pipeline\\{closure:/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Pipeline/Pipeline.php:185-216}",
-            "type": "->",
-            "class": "Illuminate\\Routing\\Pipeline",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Http/Middleware/ValidatePostSize.php",
-            "line": 27
-        },
-        {
-            "function": "handle",
-            "type": "->",
-            "class": "Illuminate\\Foundation\\Http\\Middleware\\ValidatePostSize",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Pipeline/Pipeline.php",
-            "line": 209
-        },
-        {
-            "function": "Illuminate\\Pipeline\\{closure:/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Pipeline/Pipeline.php:185-216}",
-            "type": "->",
-            "class": "Illuminate\\Routing\\Pipeline",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Foundation/Http/Middleware/PreventRequestsDuringMaintenance.php",
-            "line": 110
-        },
-        {
-            "function": "handle",
-            "type": "->",
-            "class": "App\\Http\\Middleware\\PreventRequestsDuringMaintenance",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Pipeline/Pipeline.php",
-            "line": 209
-        },
-        {
-            "function": "Illuminate\\Pipeline\\{closure:/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Pipeline/Pipeline.php:185-216}",
-            "type": "->",
-            "class": "Illuminate\\Routing\\Pipeline",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Http/Middleware/HandleCors.php",
-            "line": 49
-        },
-        {
-            "function": "handle",
-            "type": "->",
-            "class": "Illuminate\\Http\\Middleware\\HandleCors",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Pipeline/Pipeline.php",
-            "line": 209
-        },
-        {
-            "function": "Illuminate\\Pipeline\\{closure:/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Pipeline/Pipeline.php:185-216}",
-            "type": "->",
-            "class": "Illuminate\\Routing\\Pipeline",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Http/Middleware/TrustProxies.php",
-            "line": 58
-        },
-        {
-            "function": "handle",
-            "type": "->",
-            "class": "App\\Http\\Middleware\\TrustProxies",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Pipeline/Pipeline.php",
-            "line": 209
-        },
-        {
-            "function": "Illuminate\\Pipeline\\{closure:/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Pipeline/Pipeline.php:185-216}",
-            "type": "->",
-            "class": "Illuminate\\Routing\\Pipeline",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Pipeline/Pipeline.php",
-            "line": 127
-        },
-        {
-            "function": "then",
-            "type": "->",
-            "class": "Illuminate\\Routing\\Pipeline",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Foundation/Http/Kernel.php",
-            "line": 176
-        },
-        {
-            "function": "sendRequestThroughRouter",
-            "type": "->",
-            "class": "App\\Http\\Kernel",
-            "file": "/var/www/html/Web-Scrapping-Backend/vendor/laravel/framework/src/Illuminate/Foundation/Http/Kernel.php",
-            "line": 145
-        },
-        {
-            "function": "handle",
-            "type": "->",
-            "class": "App\\Http\\Kernel",
-            "file": "/var/www/html/Web-Scrapping-Backend/public/index.php",
-            "line": 51
-        },
-        {
-            "function": "{main}",
-            "file": "/var/www/html/Web-Scrapping-Backend/public/index.php",
-            "line": 0
+    $app_id                             = $request->app_id;
+    $prompt_id                          = $request->prompt_id;
+    $prompt                             = Prompt::where("id", $prompt_id)->value("prompt");
+    $start_ai_apple_reviews_date       = $request->start_ai_apple_reviews_date;
+    $end_ai_apple_reviews_date         = $request->end_ai_apple_reviews_date;
+
+    $currentDate                        = Carbon::now();
+    $threeMonthsAgo                     = $currentDate->subMonths(3);
+
+    // Build the query but don't execute with get() yet
+    if (!is_null($start_ai_apple_reviews_date) && !is_null($end_ai_apple_reviews_date)) {
+        $appleReviewsQuery = DB::table('AppleReview')
+            ->join('AppleApp', 'AppleReview.app_id', '=', 'AppleApp.id')
+            ->where('AppleApp.id', $app_id)
+            ->whereBetween('AppleReview.updated', [$start_ai_apple_reviews_date, $end_ai_apple_reviews_date])
+            ->select('AppleReview.text');
+    } else {
+        $appleReviewsQuery = DB::table('AppleReview')
+            ->select('AppleReview.text')
+            ->join('AppleApp', 'AppleReview.app_id', '=', 'AppleApp.id')
+            ->where('AppleApp.id', $app_id)
+            ->whereDate('AppleReview.updated', '>=', $threeMonthsAgo);
+    }
+
+    // Process in chunks instead of loading all at once
+    $combinedValuesArray = [];
+    $appleReviewsQuery->chunk(1000, function ($appleReviews) use (&$combinedValuesArray) {
+        foreach ($appleReviews as $item) {
+            if (!empty($item->text)) {
+                $combinedValuesArray['text'][] = $item->text;
+            }
         }
-    ]
+        // Clear the chunk from memory
+        unset($appleReviews);
+    });
+
+    $stringRepresentation = '';
+    foreach ($combinedValuesArray as $key => $values) {
+        foreach ($values as $value) {
+            if ($stringRepresentation !== '') {
+                $stringRepresentation .= ', ';
+            }
+            $stringRepresentation .= "$key: $value";
+        }
+    }
+
+    // Clear the array from memory once we're done with it
+    unset($combinedValuesArray);
+
+    $text = $stringRepresentation;
+    $user = User::find(Auth::user()->id);
+
+    // Check token availability
+    $provider = new EncoderProvider();
+    $encoder = $provider->getForModel('gpt-4-turbo');
+    $systemMessage = ['role' => 'system', 'content' => $prompt];
+    $userMessage = ['role' => 'user', 'content' => $text];
+    $systemMessageTokens = count($encoder->encode($systemMessage['content']));
+    $userMessageTokens = count($encoder->encode($userMessage['content']));
+    $inputTokens = $systemMessageTokens + $userMessageTokens;
+
+    if ($user->user_token < $inputTokens) {
+        Log::info('Insufficient tokens for user', ['userId' => $user->id]);
+        return response()->json(['error' => 'insufficient_tokens'], 400);
+    }
+
+    if (empty($text)) {
+        $text = 'No significant reviews available for analysis. please dont show the user the report. tell the user to make sentiment analysis first.';
+    }
+
+    // Instantiate OpenAIConfig class and send request
+    $openAI = new OpenAIConfig();
+    $responseBody = $openAI->sendRequest($prompt, $text);
+
+    if ($responseBody && isset($responseBody['choices'][0]['message']['content'])) {
+        $report = $responseBody['choices'][0]['message']['content'];
+
+        // Check for output tokens and deduct from user
+        $outputTokens = count($encoder->encode($report));
+        if ($user->user_token < $outputTokens) {
+            Log::info('Insufficient tokens for user', ['userId' => $user->id]);
+            return response()->json(['error' => 'insufficient_tokens'], 400);
+        }
+
+        if (!$user->hasPermission("tokens_unlimited")) {
+            $user->user_token -= ($inputTokens + $outputTokens);
+            $user->save();
+        }
+
+        broadcast(new NewSentimentEvent());
+    } else {
+        $report = 'Error processing request.';
+    }
+
+    return response()->json(['report' => $report]);
 }

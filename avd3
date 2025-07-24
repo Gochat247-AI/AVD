@@ -65,6 +65,8 @@ echo "<?php echo 'Web Memory limit: ' . ini_get('memory_limit'); ?>" | sudo tee 
 
 
 
+Allowed memory size of 1073741824 bytes exhausted (tried to allocate 213141277 bytes)
+
 
 
 

@@ -8,3 +8,20 @@ php -r "echo php_ini_loaded_file();"
 ls -la /etc/php.ini
 ls -la /etc/php/*/cli/php.ini
 ls -la /usr/local/etc/php/php.ini
+
+
+sudo systemctl restart php-fpm
+
+sudo systemctl restart nginx
+
+# Check memory limit
+php -r "echo ini_get('memory_limit');"
+
+# Or create a test PHP file
+echo "<?php phpinfo(); ?>" | sudo tee /var/www/html/info.php
+
+# Make sure PHP-FPM is running
+sudo systemctl status php-fpm
+
+# Check Nginx status
+sudo systemctl status nginx

@@ -28,3 +28,76 @@ sudo systemctl status nginx
 
 
 memory_limit = 1024M
+
+[root@DX00133 ~]# php -r "echo ini_get('memory_limit');"
+1024M[root@DX00133 ~]#
+
+
+
+Allowed memory size of 536870912 bytes exhausted (tried to allocate 98570240 bytes)
+
+
+
+top - 17:06:55 up 143 days,  2:15,  2 users,  load average: 1.69, 2.24, 2.18
+Tasks: 503 total,   1 running, 502 sleeping,   0 stopped,   0 zombie
+%Cpu(s):  6.2 us,  2.2 sy,  0.0 ni, 91.4 id,  0.0 wa,  0.1 hi,  0.1 si,  0.0 st
+MiB Mem :  31809.6 total,   8865.2 free,   7293.8 used,  16649.1 buff/cache
+MiB Swap:  16384.0 total,  16374.6 free,      9.4 used.  24515.8 avail Mem
+
+    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+ 987370 root      20   0   42400  36532  11392 S  66.2   0.1 941:00.71 uvicorn
+ 995292 root      20   0   41372  35636  11520 S  61.6   0.1 754:10.55 uvicorn
+   1380 root      20   0   20.6g   2.8g 268204 S   2.0   8.9  45057:45 kesl
+ 995294 root      20   0  854628 107048  23680 S   0.7   0.3   4:05.21 python3
+   1379 root      20   0   13104   2484   2304 S   0.3   0.0 962:15.49 wdserver
+   1450 root      20   0  601208  55508  53348 S   0.3   0.2  19:22.60 rsyslogd
+   1595 root      20   0 4268780 375724  65092 S   0.3   1.2   1185:49 klnagent
+ 219701 root      20   0  248148  11992   8832 S   0.3   0.0 279:33.07 vmtoolsd
+ 987372 root      20   0 1260148 240900  38016 S   0.3   0.7   4:16.04 python3
+ 988409 root      20   0  199948  83384  25600 S   0.3   0.3   2:53.63 python
+1020382 root      20   0   23008   8064   6272 R   0.3   0.0   0:00.06 top
+2490259 977       20   0   14104   9996   6272 S   0.3   0.0   1:52.38 uwsgi
+2490266 systemd+  20   0   36288   9344   6400 S   0.3   0.0 133:23.15 valkey-server
+2611663 root      20   0  102904  29168  12160 S   0.3   0.1  20:29.24 python3
+2611665 root      20   0  293448  68264  20480 S   0.3   0.2  49:05.77 python3
+4105840 root      20   0  102904  29032  12160 S   0.3   0.1   2:18.97 uvicorn
+4105842 root      20   0  119868 112404  19840 S   0.3   0.3   5:59.73 python3
+      1 root      20   0  181096  13952   8832 S   0.0   0.0  22:16.71 systemd
+      2 root      20   0       0      0      0 S   0.0   0.0   0:12.20 kthreadd
+      3 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 rcu_gp
+      4 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 rcu_par_gp
+      5 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 slub_flushwq
+      6 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 netns
+      8 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/0:0H-events_highpri
+     10 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 mm_percpu_wq
+     12 root      20   0       0      0      0 I   0.0   0.0   0:00.00 rcu_tasks_kthre
+     13 root      20   0       0      0      0 I   0.0   0.0   0:00.00 rcu_tasks_rude_
+     14 root      20   0       0      0      0 I   0.0   0.0   0:00.00 rcu_tasks_trace
+     15 root      20   0       0      0      0 S   0.0   0.0   0:44.44 ksoftirqd/0
+     16 root      20   0       0      0      0 I   0.0   0.0 281:16.99 rcu_preempt
+     17 root      rt   0       0      0      0 S   0.0   0.0   0:25.45 migration/0
+     18 root     -51   0       0      0      0 S   0.0   0.0   0:00.00 idle_inject/0
+     20 root      20   0       0      0      0 S   0.0   0.0   0:00.00 cpuhp/0
+     21 root      20   0       0      0      0 S   0.0   0.0   0:00.00 cpuhp/1
+     22 root     -51   0       0      0      0 S   0.0   0.0   0:00.00 idle_inject/1
+     23 root      rt   0       0      0      0 S   0.0   0.0   0:22.04 migration/1
+     24 root      20   0       0      0      0 S   0.0   0.0   1:22.77 ksoftirqd/1
+     26 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/1:0H-events_highpri
+     27 root      20   0       0      0      0 S   0.0   0.0   0:00.00 cpuhp/2
+     28 root     -51   0       0      0      0 S   0.0   0.0   0:00.00 idle_inject/2
+     29 root      rt   0       0      0      0 S   0.0   0.0   0:22.21 migration/2
+     30 root      20   0       0      0      0 S   0.0   0.0   0:57.88 ksoftirqd/2
+     32 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/2:0H-events_highpri
+     33 root      20   0       0      0      0 S   0.0   0.0   0:00.00 cpuhp/3
+     34 root     -51   0       0      0      0 S   0.0   0.0   0:00.00 idle_inject/3
+     35 root      rt   0       0      0      0 S   0.0   0.0   0:25.45 migration/3
+     36 root      20   0       0      0      0 S   0.0   0.0   1:21.73 ksoftirqd/3
+     38 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/3:0H-events_highpri
+     39 root      20   0       0      0      0 S   0.0   0.0   0:00.00 cpuhp/4
+     40 root     -51   0       0      0      0 S   0.0   0.0   0:00.00 idle_inject/4
+     41 root      rt   0       0      0      0 S   0.0   0.0   0:22.49 migration/4
+     42 root      20   0       0      0      0 S   0.0   0.0   2:15.69 ksoftirqd/4
+     45 root      20   0       0      0      0 S   0.0   0.0   0:00.00 cpuhp/5
+     46 root     -51   0       0      0      0 S   0.0   0.0   0:00.00 idle_inject/5
+     47 root      rt   0       0      0      0 S   0.0   0.0   0:20.87 migration/5
+     48 root      20   0       0      0      0 S   0.0   0.0   1:06.00 ksoftirqd/5

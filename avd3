@@ -12,3 +12,56 @@ ps aux | grep php-fpm
 # Check if there are any php_admin_value overrides
 sudo grep -r "php_admin_value\|php_value" /etc/php-fpm.d/
 
+
+
+[root@DX00133 ~]# php -r "echo ini_get('memory_limit');"
+1024M[root@DX00133 ~]# ^C
+[root@DX00133 ~]# sudo php-fpm -t
+[24-Jul-2025 17:11:03] NOTICE: configuration file /etc/php-fpm.conf test is successful
+
+[root@DX00133 ~]# ^C
+[root@DX00133 ~]# sudo systemctl restart php-fpm
+[root@DX00133 ~]# ls -la /etc/php-fpm.d/
+total 36
+drwxr-xr-x    2 root root    22 Jun 18 21:14 .
+drwxr-xr-x. 130 root root 12288 Jul  7 09:36 ..
+-rw-r--r--    1 root root 19746 Jun 18 21:14 www.conf
+[root@DX00133 ~]# sudo cat /etc/php-fpm.d/www.conf | grep -i memory
+; This can be useful to work around memory leaks in 3rd party libraries. For
+;   last request memory  - the max amount of memory the last request consumed
+;                          because memory calculation is done when the request
+;   last request memory:  0
+;  %M: peak of memory allocated by PHP
+;php_admin_value[memory_limit] = 128M
+php_admin_value[memory_limit] = 512M
+[root@DX00133 ~]# ps aux | grep php-fpm
+root     1020491  0.3  0.1 270712 38232 ?        Ss   17:14   0:00 php-fpm: master process (/etc/php-fpm.conf)
+nginx    1020494  0.0  0.0 275364 16196 ?        S    17:14   0:00 php-fpm: pool www
+nginx    1020495  0.0  0.0 275364 16196 ?        S    17:14   0:00 php-fpm: pool www
+nginx    1020496  0.0  0.0 275364 16196 ?        S    17:14   0:00 php-fpm: pool www
+nginx    1020497  0.0  0.0 275364 16196 ?        S    17:14   0:00 php-fpm: pool www
+nginx    1020498  0.0  0.0 275364 16196 ?        S    17:14   0:00 php-fpm: pool www
+root     1020523  0.0  0.0   6408  2304 pts/5    S+   17:14   0:00 grep --color=auto php-fpm
+[root@DX00133 ~]# sudo grep -r "php_admin_value\|php_value" /etc/php-fpm.d/
+/etc/php-fpm.d/www.conf:; - 'php_values'
+/etc/php-fpm.d/www.conf:; - 'php_admin_values'
+/etc/php-fpm.d/www.conf:;   php_value/php_flag             - you can set classic ini defines which can
+/etc/php-fpm.d/www.conf:;   php_admin_value/php_admin_flag - these directives won't be overwritten by
+/etc/php-fpm.d/www.conf:;php_admin_value[sendmail_path] = /usr/sbin/sendmail -t -i -f www@my.domain.com
+/etc/php-fpm.d/www.conf:php_admin_value[error_log] = /var/log/php-fpm/www-error.log
+/etc/php-fpm.d/www.conf:;php_admin_value[memory_limit] = 128M
+/etc/php-fpm.d/www.conf:php_value[session.save_handler] = files
+/etc/php-fpm.d/www.conf:php_value[session.save_path]    = /var/lib/php/session
+/etc/php-fpm.d/www.conf:php_value[soap.wsdl_cache_dir]  = /var/lib/php/wsdlcache
+/etc/php-fpm.d/www.conf:;php_value[opcache.file_cache]  = /var/lib/php/opcache
+/etc/php-fpm.d/www.conf:php_admin_value[memory_limit] = 512M
+/etc/php-fpm.d/www.conf:php_admin_value[upload_max_filesize] = 512M
+/etc/php-fpm.d/www.conf:php_admin_value[post_max_size] = 512M
+/etc/php-fpm.d/www.conf:php_admin_value[max_execution_time] = 300
+[root@DX00133 ~]#
+
+
+
+
+
+

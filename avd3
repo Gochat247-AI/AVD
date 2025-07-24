@@ -61,6 +61,9 @@ root     1020523  0.0  0.0   6408  2304 pts/5    S+   17:14   0:00 grep --color=
 [root@DX00133 ~]#
 
 
+echo "<?php echo 'Web Memory limit: ' . ini_get('memory_limit'); ?>" | sudo tee /var/www/html/memtest.php
+
+
 
 
 

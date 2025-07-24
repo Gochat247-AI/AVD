@@ -448,5 +448,7 @@ php_admin_value[max_execution_time] = 300
 
 
 Allowed memory size of 1073741824 bytes exhausted (tried to allocate 205063749 bytes)
+Allowed memory size of 2147483648 bytes exhausted (tried to allocate 1060386712 bytes)
+
 
 
